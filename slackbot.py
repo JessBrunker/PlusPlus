@@ -3,6 +3,7 @@
 import os
 import time
 import re
+import sqlite3
 
 from slackclient import SlackClient
 
@@ -27,6 +28,7 @@ def parse_messages(slack_events):
     for event in slack_events:
         if event['type'] == 'message' and not 'subtype' in event:
             pp_mentions = parse_plusplus_mentions(event['text'])
+            pp_mentions = set(pp_mentions) # remove duplicates
             return pp_mentions, event['channel']
     return None, None
 
@@ -47,12 +49,34 @@ def handle_plusplus(user_id, symbol, channel):
     the user's point value if the symbol is a '-'. Print out the user's
     total after the operation is complete.
     '''
-    text = '++' if symbol == '+' else '--'
+    conn = sqlite3.connect('scores.db')
+    c = conn.cursor()
+    user = (user_id,) # used to prevent SQL injections
+    c.execute('''SELECT User, Score FROM UserScores
+                 WHERE User = ?''', user)
+    user_values = c.fetchone()
+    
+    if not user_values: # user isn't in table yet
+        print('{} not in the database'.format(user_id))
+        init_points = 1 if symbol == '+' else -1
+        user_values = (user_id, init_points)
+        c.execute('''INSERT INTO UserScores VALUES (?, ?)''', user_values)
+    else:
+        score = user_values[1] # Get the score value from the returned tuple
+        if symbol == '+':
+            score += 1
+        else:
+            score -= 1
+        user_values = (user_id, score)
+        # need to reverse the tuple to fit the query
+        c.execute('''UPDATE UserScores SET Score = ?
+                     WHERE User = ?''', (user_values[1], user_values[0]))
+    conn.commit()
     slack_client.api_call(
             'chat.postMessage',
             channel=channel,
-            # still need to connect to database, for now just print
-            text='<@{}> got a {}'.format(user_id, text)
+            text='<@{}> total points: {}'.format(
+                user_values[0], user_values[1])
     )
 
 
