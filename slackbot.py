@@ -17,32 +17,55 @@ bot_id = None
 # constants
 RTM_READ_DELAY = 1 # 1 second delay between reading from RTM
 USER_PP_REGEX = '<@(|[WU].+?)>\s?([+-]){2}' # finds @user++
-OTHER_PP_REGEX = '@(\S+)\s?([+-]){2}' # finds @anything++
+OTHER_PP_REGEX = '@([A-Za-z0-9]+[^>])\s?([+-]){2}' # finds @anything++
 
 
 def parse_messages(slack_events):
     '''
-    Parse incoming messages looking for instances of ++ or --. Returns a
-    list of tuples of the form (username, plus/minus), and the channel in
-    which the mention appeared. Returns None, None if nothing is found.
+    Parse incoming messages looking for instances of ++ or --. Returns two
+    lists, one for users and one for everything else, all of which are getting
+    a plusplus, and the channel the post occurred in. Excludes the poster from
+    giving a plusplus to themselves and shames them.
     '''
     for event in slack_events:
         if event['type'] == 'message' and not 'subtype' in event:
-            #pp_mentions = parse_plusplus_mentions(event['text'])
             pp_mentions = re.findall(USER_PP_REGEX, event['text'])
-            pp_mentions = set(pp_mentions) # remove duplicates
+            # don't want users to ++/-- themselves
+            # we must shame them
+            if self_gratification(event['user'], pp_mentions):
+                slack_client.api_call(
+                    'chat.postMessage',
+                    channel=event['channel'],
+                    text='<@{}> go ahead and pat yourself on the back'.format(
+                        event['user'])
+                    )
+            # list all mentions not including the poster
+            pp_mentions = set(filter(
+                lambda x: x[0] != event['user'], pp_mentions)) 
+
             pp_others = re.findall(OTHER_PP_REGEX, event['text'])
+            # want to exclude any entries that are actually usernames
             pp_others = set(filter(
                 lambda x: x not in pp_mentions, pp_others))
             return pp_mentions, pp_others, event['channel']
     return None, None, None
 
 
+def self_gratification(user, mentions):
+    '''
+    Returns True if the user is trying to give themselves a plusplus
+    '''
+    for mention in mentions:
+        if user == mention[0]:
+            return True
+    return False
+
+
 def handle_plusplus_mentions(mentions, channel):
     '''
     Increment a user's point value if the symbol is a '+', and decrement
-    the user's point value if the symbol is a '-'. Print out the user's
-    total after the operation is complete.
+    the user's point value if the symbol is a '-' and update the values in
+    the database. Print out the user's total after the operation is complete.
     '''
     conn = sqlite3.connect('scores.db')
     c = conn.cursor()
