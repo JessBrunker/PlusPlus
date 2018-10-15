@@ -14,13 +14,15 @@ slack_client = SlackClient(sc)
 
 # bot's user ID in Slack: value assigned after startup
 bot_id = None
+# dict for user_id: username pairs
+user_ids = {}
 
 # constants
 RTM_READ_DELAY = 1 # 1 second delay between reading from RTM
 # Finds bot commands e.g. @bot help
 BOT_MENTION_REGEX = '^<@{}>\s([A-Za-z0-9\s]+)\s?(\S+)?$'
 USER_PP_REGEX = '<@(|[WU].+?)>\s?([+-]){2}' # finds @user++
-OTHER_PP_REGEX = '@([-_A-Za-z0-9:#]+[^>])\s?([+-]){2}' # finds @anything++
+OTHER_PP_REGEX = '@\s?([-_A-Za-z0-9:#]+[^>])\s?([+-]){2}' # finds @anything++
 DB_FILE = 'scores.db'
 
 
@@ -160,12 +162,13 @@ def handle_command(cmd, params, channel):
         message += handle_lookup_others(5)
     # Show the score for a given user or other object
     elif command == 'lookup':
-        if not params:
-            post_message('I don\'t know who you want me to lookup. Type "<@{0}> lookup @user" or "<@{0}> lookup @text"'.format(bot_id), channel)
-            return
-        subject = params[0]
-        result = handle_lookup_one(subject) 
-        message = '{} has {} points'.format(subject, result)
+        if params:
+            subject = params[0]
+            result = handle_lookup_one(subject)
+            message = '{} has {} point'.format(subject,result)
+        else:
+            message = 'I don\'t know who you want me to lookup. " \
+            "Type "<@{0}> lookup @user" or "<@{0}> lookup @text"'.format(bot_id)
     # Show the bottom 5 scores in both tables
     elif command == 'bottom':
         message = handle_lookup_users(-5)
@@ -177,8 +180,8 @@ def handle_command(cmd, params, channel):
         return
     # Unknown command
     else:
-        message = "I don't know what you want me to do. Try <@{}> help".format(
-                bot_id)
+        message = "I don't know what you want me to do. " \
+                  "Try typing <@{}> help".format(bot_id)
     post_message(message, channel)
 
 
@@ -199,8 +202,11 @@ def handle_lookup_users(amount):
     count = 0
     # Loop through the returned rows and format the message
     while count < len(results) and count < 5:
-        message += '\n{} - <@{}>: {}'.format(
-                count+1, results[count][0], results[count][1])
+        user_id = results[count][0]
+        username = user_ids[user_id] # used so we don't tag everyone
+        score = results[count][1]
+        message += '\n{} - *@{}*: {}'.format(
+                count+1, username, score)
         count += 1
     return message
 
@@ -223,8 +229,10 @@ def handle_lookup_others(amount):
     count = 0
     # Loop through the returned rows and format the message
     while count < len(results) and count < 5:
-        message += '\n{} - @{}: {}'.format(
-                count+1, results[count][0], results[count][1])
+        text = results[count][0]
+        score = results[count][1]
+        message += '\n{} - *@{}*: {}'.format(
+                count+1, text, score)
         count += 1
     return message
 
@@ -261,9 +269,10 @@ def print_help(channel):
     '''
     Print a help message showing how to use the commands
     '''
-    message = '''Here is a list of commands you can use with <@{0}> by typing <@{0}> [command]:
-
-    *leaderboard*: Show the top five scoring users and other objects
+    message = "Here is a list of commands you can use with <@{0}> by typing " \
+              "<@{0}> [command]:"
+    message += '''
+    *leaderboard | top*: Show the top five scoring users and other objects
     *bottom*: Show the bottom five scoring users and other objects
     *lookup [user|object]*: Lookup the current score for the user or object
         '''
@@ -281,13 +290,26 @@ def post_message(message, channel):
     )
 
 
+def init_user_dict():
+    '''
+    Calls the 'users.list' function to get a dictionary of all the user info. 
+    Use that information to populate the user_ids dict with user_id: username
+    pairs. This lets us use the person's username without tagging them.
+    '''
+    request = slack_client.api_call('users.list')
+    if request['ok']:
+        for item in request['members']:
+            user_ids[item['id']] = item['name']
+
+
 if __name__ == '__main__':
     if slack_client.rtm_connect(with_team_state=False):
-        print('bot connected and running')
+        print('PlusPlusBot connected and running')
         # read bot's user ID by calling Web API method 'auth.test'
         bot_id = slack_client.api_call('auth.test')['user_id']
         # initialize regex with the bot id
         BOT_MENTION_REGEX = BOT_MENTION_REGEX.format(bot_id)
+        init_user_dict()
         while True:
             mentions, others, channel = parse_messages(slack_client.rtm_read())
             if mentions:
