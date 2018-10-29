@@ -1,3 +1,5 @@
-slack_code.py
-*.pyc
+.un
 *~
+slack_code.py
+*.swp.un
+__pychache__/
