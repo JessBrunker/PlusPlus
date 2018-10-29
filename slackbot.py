@@ -128,7 +128,6 @@ def handle_plusplus_mentions(user, mentions, channel):
                     WHERE User = ?''', user_param)
         user_values = c.fetchone()
         if not user_values: # user not in table
-            print(user + ' not in table')
             c.execute('INSERT INTO UserScores VALUES (?, ?, ?)',
                     (user, 0, user_diff))
         else:
@@ -196,7 +195,7 @@ def handle_command(cmd, params, channel):
         if params:
             subject = params[0]
             result, diff = handle_lookup_one(subject)
-            message = '{} has {} point'.format(subject,result)
+            message = '{} has {} points'.format(subject,result)
             if diff is not None:
                 message += ' and has a ++/-- ratio of {0:+d}'.format(diff)
         else:
@@ -287,7 +286,9 @@ def handle_lookup_diff(amount):
     # Highest 5 diff
     if amount > 0:
         query += ' DESC'
-    message = '*Differential leaders*'
+        message = '*Top ++ givers*'
+    else:
+        message = '*Top -- givers*'
     c.execute(query)
     results = c.fetchmany(amount)
     count = 0
@@ -326,8 +327,10 @@ def handle_lookup_one(subject):
     c = conn.cursor()
     c.execute(query, (subject_param))
     result = c.fetchone()
-    if not result:
-        result = [subject, 0] # user is not in the database
+    if not result and column == 'User':
+        result = (subject, 0, 0) # user is not in the database
+        c.execute('INSERT INTO UserScores VALUES (?, ?, ?)', result)
+        conn.commit()
     if column == 'User':
         return result[1], result[2]
     else:
