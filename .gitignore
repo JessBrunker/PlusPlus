@@ -1,5 +1,7 @@
 .un
 *~
+*.pyc
+.DS_Store
 slack_code.py
 *.swp.un
-__pychache__/
+__pychache__

@@ -6,11 +6,19 @@ import re
 import sqlite3
 
 from slackclient import SlackClient
-from slack_code import code as sc
+from slack_code import wsd_code
+from slack_code import test_code
 
+
+# set to false if not using test slack
+TESTING = False
 
 # instantiate Slack client
-slack_client = SlackClient(sc)
+slack_client = None
+if TESTING:
+    slack_client = SlackClient(test_code)
+else:
+    slack_client = SlackClient(wsd_code)
 
 # bot's user ID in Slack: value assigned after startup
 bot_id = None
@@ -28,10 +36,9 @@ DB_FILE = 'scores.db'
 
 def parse_messages(slack_events):
     '''
-    Parse incoming messages looking for instances of ++ or --. Returns two
-    lists, one for users and one for everything else, all of which are getting
-    a plusplus, and the channel the post occurred in. Excludes the poster from
-    giving a plusplus to themselves and shames them.
+    Parses incoming slack events for user mentions, other mentions, and bot commands,
+    and acts accordingly. If there is a bot command, the function ends after its
+    resolution.
     '''
     for event in slack_events:
         if event['type'] == 'message' and not 'subtype' in event:
@@ -41,7 +48,8 @@ def parse_messages(slack_events):
                 bot_command = command_matches.group(1)
                 parameters = command_matches.group(2)
                 handle_command(bot_command, parameters, event['channel'])
-                return None, None, None # do not allow ++ in a bot command
+                #return None, None, None # do not allow ++ in a bot command
+                return
 
             # check for @user++
             pp_mentions = re.findall(USER_PP_REGEX, event['text'])
@@ -53,15 +61,17 @@ def parse_messages(slack_events):
             # list all mentions not including the poster
             pp_mentions = set(filter(
                 lambda x: x[0] != event['user'], pp_mentions))
+            handle_plusplus_mentions(event['user'], pp_mentions, event['channel']) 
 
             # check for @nonuser++
             pp_others = re.findall(OTHER_PP_REGEX, event['text'])
             # want to exclude any entries that are actually usernames
             pp_others = set(filter(
                 lambda x: x not in pp_mentions, pp_others))
+            handle_plusplus_others(pp_others, event['channel'])
 
-            return pp_mentions, pp_others, event['channel']
-    return None, None, None
+            #return pp_mentions, pp_others, event['channel']
+    #return None, None, None
 
 
 def self_gratification(user, mentions):
@@ -74,37 +84,58 @@ def self_gratification(user, mentions):
     return False
 
 
-def handle_plusplus_mentions(mentions, channel):
+def handle_plusplus_mentions(user, mentions, channel):
     '''
     Increment a user's point value if the symbol is a '+', and decrement
     the user's point value if the symbol is a '-' and update the values in
     the database. Print out the user's total after the operation is complete.
+    Additionally update the original user's +/- differential.
     '''
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    user_diff = 0 # used to track user +/- differential
     for mention in mentions:
-        user_id, symbol = mention
-        user = (user_id,) # used to prevent SQL injections
+        recip_id, symbol = mention
+        recip = (recip_id,) # used to prevent SQL injections
         c.execute('''SELECT User, Score FROM UserScores
-                    WHERE User = ?''', user)
-        user_values = c.fetchone()
-    
-        if not user_values: # user isn't in table yet
-            init_points = 1 if symbol == '+' else -1
-            user_values = (user_id, init_points)
-            c.execute('INSERT INTO UserScores VALUES (?, ?)', user_values)
+                    WHERE User = ?''', recip)
+        recip_values = c.fetchone()
+        if symbol == '+':
+            user_diff += 1
         else:
-            score = user_values[1]
+            user_diff -= 1
+    
+        if not recip_values: # user isn't in table yet
+            init_points = 1 if symbol == '+' else -1
+            recip_values = (recip_id, init_points, 0)
+            c.execute('INSERT INTO UserScores VALUES (?, ?, ?)', recip_values)
+        else:
+            score = recip_values[1]
             if symbol == '+':
                 score += 1
             else:
                 score -= 1
-            user_values = (user_id, score)
+            recip_values = (recip_id, score)
             # need to reverse the tuple to fit the query
             c.execute('''UPDATE UserScores SET Score = ?
-                    WHERE User = ?''', (user_values[1], user_values[0]))
+                    WHERE User = ?''', (recip_values[1], recip_values[0]))
         post_message('<@{}> total points: {}'.format(
-            user_values[0], user_values[1]), channel)
+            recip_values[0], recip_values[1]), channel)
+    # update user differential
+    if user_diff != 0:
+        user_param = (user,)
+        c.execute('''SELECT User, Differential FROM UserScores
+                    WHERE User = ?''', user_param)
+        user_values = c.fetchone()
+        if not user_values: # user not in table
+            print(user + ' not in table')
+            c.execute('INSERT INTO UserScores VALUES (?, ?, ?)',
+                    (user, 0, user_diff))
+        else:
+            score = user_values[1]
+            score += user_diff
+            c.execute('''UPDATE UserScores SET Differential = ?
+                    WHERE User = ?''', (score, user))
     conn.commit()
 
 
@@ -164,8 +195,10 @@ def handle_command(cmd, params, channel):
     elif command == 'lookup':
         if params:
             subject = params[0]
-            result = handle_lookup_one(subject)
+            result, diff = handle_lookup_one(subject)
             message = '{} has {} point'.format(subject,result)
+            if diff is not None:
+                message += ' and has a ++/-- ratio of {0:+d}'.format(diff)
         else:
             message = 'I don\'t know who you want me to lookup. " \
             "Type "<@{0}> lookup @user" or "<@{0}> lookup @text"'.format(bot_id)
@@ -174,6 +207,12 @@ def handle_command(cmd, params, channel):
         message = handle_lookup_users(-5)
         message += '\n\n'
         message += handle_lookup_others(-5)
+    # Show the top 5 highest +/- differentials
+    elif command in ['nicest', 'givers', 'diff', 'differential']:
+        message = handle_lookup_diff(5)
+    # Show the bottom 5 +/- differentials
+    elif command in ['worst', 'takers']:
+        message = handle_lookup_diff(-5)
     # Show the help message
     elif command in ['help', 'usage', 'commands', 'options']:
         print_help(channel)
@@ -192,7 +231,7 @@ def handle_lookup_users(amount):
     '''
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    query = 'SELECT * FROM UserScores ORDER BY Score'
+    query = 'SELECT User, Score FROM UserScores ORDER BY Score'
     # We need the top 5 scores
     if amount > 0:
         query += ' DESC'
@@ -237,10 +276,37 @@ def handle_lookup_others(amount):
     return message
 
 
+def handle_lookup_diff(amount):
+    '''
+    Find a given amount of users, ordered by their ++/-- differential. If amount < 0,
+    we need the lowest scores. Returns a string with formatted data.
+    '''
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    query = 'SELECT User, Differential FROM UserScores ORDER BY Differential'
+    # Highest 5 diff
+    if amount > 0:
+        query += ' DESC'
+    message = '*Differential leaders*'
+    c.execute(query)
+    results = c.fetchmany(amount)
+    count = 0
+    # Loop through the returned rows and format the message
+    while count < len(results) and count < 5:
+        user_id = results[count][0]
+        username = user_ids[user_id] # used so we don't tag everyone
+        diff = results[count][1]
+        message += '\n{} - *@{}*: {}'.format(
+                count+1, username, diff)
+        count += 1
+    return message
+
+
 def handle_lookup_one(subject):
     '''
     Find the score for a given subject. First decides whether it is a user or
-    an "other", then queries the appropriate table. Returns the subject's score.
+    an "other", then queries the appropriate table. Returns the subject's score, also
+    returns the differential if the subject is a user.
     '''
     table = ''
     column = ''
@@ -262,7 +328,10 @@ def handle_lookup_one(subject):
     result = c.fetchone()
     if not result:
         result = [subject, 0] # user is not in the database
-    return result[1] # only need the score
+    if column == 'User':
+        return result[1], result[2]
+    else:
+        return result[1], None
 
 
 def print_help(channel):
@@ -274,7 +343,9 @@ def print_help(channel):
     message += '''
     *leaderboard | top*: Show the top five scoring users and other objects
     *bottom*: Show the bottom five scoring users and other objects
-    *lookup [user|object]*: Lookup the current score for the user or object
+    *lookup [user|object]*: Look up the current score for the user or object
+    *givers*: Look who has given out the most ++
+    *takers*: Look who has given out the most --
         '''
     post_message(message.format(bot_id), channel)
 
@@ -311,11 +382,7 @@ if __name__ == '__main__':
         BOT_MENTION_REGEX = BOT_MENTION_REGEX.format(bot_id)
         init_user_dict()
         while True:
-            mentions, others, channel = parse_messages(slack_client.rtm_read())
-            if mentions:
-                handle_plusplus_mentions(mentions, channel)
-            if others:
-                handle_plusplus_others(others, channel)
+            parse_messages(slack_client.rtm_read())
             time.sleep(RTM_READ_DELAY)
     else:
         print('connection failed. exception trace printed above')
