@@ -29,7 +29,7 @@ user_ids = {}
 RTM_READ_DELAY = 1 # 1 second delay between reading from RTM
 # Finds bot commands e.g. @bot help
 BOT_MENTION_REGEX = '^<@{}>\s([A-Za-z0-9\s]+)\s?(\S+)?$'
-USER_PP_REGEX = '<@(|[WU].+?)>\s?([+-]){2}' # finds @user++
+USER_PP_REGEX = '<@(|[WU]\w+?)>\s?([+-]){2}' # finds @user++
 OTHER_PP_REGEX = '@\s?([-_A-Za-z0-9:#]+[^>])\s?([+-]){2}' # finds @anything++
 DB_FILE = 'scores.db'
 
