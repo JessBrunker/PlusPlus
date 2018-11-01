@@ -4,6 +4,7 @@ import os
 import time
 import re
 import sqlite3
+import sys
 
 from slackclient import SlackClient
 from slack_code import wsd_code
@@ -238,13 +239,18 @@ def handle_lookup_users(amount):
     c.execute(query)
     results = c.fetchmany(amount)
     count = 0
+    prev_score = results[0][1] # top score
+    position = 1
     # Loop through the returned rows and format the message
     while count < len(results) and count < 5:
         user_id = results[count][0]
         username = user_ids[user_id] # used so we don't tag everyone
         score = results[count][1]
+        if score != prev_score: # resolve ties
+            position = count+1
+        prev_score = score
         message += '\n{} - *@{}*: {}'.format(
-                count+1, username, score)
+                position, username, score)
         count += 1
     return message
 
@@ -265,10 +271,15 @@ def handle_lookup_others(amount):
     c.execute(query)
     results = c.fetchmany(amount)
     count = 0
+    prev_score = results[0][1] # top score
+    position = 1
     # Loop through the returned rows and format the message
     while count < len(results) and count < 5:
         text = results[count][0]
         score = results[count][1]
+        if score != prev_score: # resolve ties
+            position = count+1
+        prev_score = score
         message += '\n{} - *@{}*: {}'.format(
                 count+1, text, score)
         count += 1
@@ -292,11 +303,16 @@ def handle_lookup_diff(amount):
     c.execute(query)
     results = c.fetchmany(amount)
     count = 0
+    prev_diff = results[0][1] # top diff
+    position =1
     # Loop through the returned rows and format the message
     while count < len(results) and count < 5:
         user_id = results[count][0]
         username = user_ids[user_id] # used so we don't tag everyone
         diff = results[count][1]
+        if diff!= prev_diff: # resolve ties
+            position = count+1
+        prev_diff = diff
         message += '\n{} - *@{}*: {}'.format(
                 count+1, username, diff)
         count += 1
