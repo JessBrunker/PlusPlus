@@ -393,7 +393,7 @@ def init_user_dict():
 
 
 if __name__ == '__main__':
-    if slack_client.rtm_connect(with_team_state=False):
+    if slack_client.rtm_connect(with_team_state=False, auto_reconnect=True):
         print('PlusPlusBot connected and running')
         # read bot's user ID by calling Web API method 'auth.test'
         bot_id = slack_client.api_call('auth.test')['user_id']
