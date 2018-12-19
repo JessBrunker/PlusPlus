@@ -192,7 +192,7 @@ def handle_command(cmd, params, channel):
         message += '\n\n'
         message += handle_lookup_others(5)
     # Show the score for a given user or other object
-    elif command == 'lookup':
+    elif command in ['loserboard', 'lookup']:
         if params:
             subject = params[0]
             result, diff = handle_lookup_one(subject)
@@ -232,10 +232,13 @@ def handle_lookup_users(amount):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     query = 'SELECT User, Score FROM UserScores ORDER BY Score'
+    message = ''
     # We need the top 5 scores
     if amount > 0:
         query += ' DESC'
-    message = '*Users leaderboard*'
+        message = '*Users loserboard*'
+    else:
+        message = '*Users leaderboard*'
     c.execute(query)
     results = c.fetchmany(amount)
     count = 0
@@ -264,10 +267,13 @@ def handle_lookup_others(amount):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     query = 'SELECT * FROM OtherScores ORDER By Score'
+    message = ''
     # We need the top 5 scores
     if amount > 0:
         query += ' DESC'
-    message = '*Other leaderboard*'
+        message = '*Other loserboard*'
+    else:
+        message = '*Other leaderboard*'
     c.execute(query)
     results = c.fetchmany(amount)
     count = 0
@@ -361,7 +367,7 @@ def print_help(channel):
               "<@{0}> [command]:"
     message += '''
     *leaderboard | top*: Show the top five scoring users and other objects
-    *bottom*: Show the bottom five scoring users and other objects
+    *loserboard | bottom*: Show the bottom five scoring users and other objects
     *lookup [user|object]*: Look up the current score for the user or object
     *givers*: Look who has given out the most ++
     *takers*: Look who has given out the most --
