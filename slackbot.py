@@ -29,8 +29,8 @@ user_ids = {}
 RTM_READ_DELAY = 1  # 1 second delay between reading from RTM
 # Finds bot commands e.g. @bot help
 BOT_MENTION_REGEX = '^<@{}>\s([A-Za-z0-9\s]+)\s?(\S+)?$'
-USER_PP_REGEX = '<@(|[WU]\w+?)>\s?(\+\+|--)'  # finds @user++
-OTHER_PP_REGEX = '@\s?([-_A-Za-z0-9:#]+[^>])\s?(\+\+|--)'  # finds @anything++
+USER_PP_REGEX = '<@(|[WU]\w+?)>\s?([+-]{2})'  # finds @user++
+OTHER_PP_REGEX = '@\s?([-_A-Za-z0-9:#]+[^>])\s?([+-]{2})'  # finds @anything++
 DB_FILE = 'scores.db'
 
 
@@ -100,10 +100,12 @@ def handle_plusplus_mentions(user, mentions, channel):
         c.execute('''SELECT User, Score FROM UserScores
                     WHERE User = ?''', recip)
         recip_values = c.fetchone()
-        if symbol == '+':
+        if symbol == '++':
             user_diff += 1
-        else:
+        elif symbol == '--':
             user_diff -= 1
+        else:
+            continue
 
         if not recip_values:  # user isn't in table yet
             init_points = 1 if symbol == '+' else -1
@@ -111,10 +113,12 @@ def handle_plusplus_mentions(user, mentions, channel):
             c.execute('INSERT INTO UserScores VALUES (?, ?, ?)', recip_values)
         else:
             score = recip_values[1]
-            if symbol == '+':
+            if symbol == '++':
                 score += 1
-            else:
+            elif symbol == '--':
                 score -= 1
+            else:
+                continue
             recip_values = (recip_id, score)
             # need to reverse the tuple to fit the query
             c.execute('''UPDATE UserScores SET Score = ?
@@ -156,15 +160,24 @@ def handle_plusplus_others(pp_instances, channel):
         name_values = c.fetchone()
 
         if not name_values:  # name isn't in table yet
-            init_points = 1 if symbol == '+' else -1
+            #init_points = 1 if symbol == '++' else -1
+            if symbol == '++':
+                init_point = 1
+            elif symbol == '--':
+                init_point = -1
+            else:
+                continue
             name_values = (name, init_points)
             c.execute('INSERT INTO OtherScores VALUES (?, ?)', name_values)
         else:
             score = name_values[1]
-            if symbol == '+':
+            if symbol == '++':
                 score += 1
-            else:
+            elif symbol == '--':
                 score -= 1
+            else:
+                continue
+
             name_values = (name, score)
             # need to reverse the tuple to fit the query
             c.execute('''UPDATE OtherScores SET Score = ?
@@ -235,9 +248,9 @@ def handle_lookup_users(amount):
     # We need the top 5 scores
     if amount > 0:
         query += ' DESC'
-        message = '*Users loserboard*'
-    else:
         message = '*Users leaderboard*'
+    else:
+        message = '*Users loserboard*'
     c.execute(query)
     results = c.fetchmany(amount)
     count = 0
@@ -270,9 +283,9 @@ def handle_lookup_others(amount):
     # We need the top 5 scores
     if amount > 0:
         query += ' DESC'
-        message = '*Other loserboard*'
-    else:
         message = '*Other leaderboard*'
+    else:
+        message = '*Other loserboard*'
     c.execute(query)
     results = c.fetchmany(amount)
     count = 0
