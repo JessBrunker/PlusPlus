@@ -160,7 +160,7 @@ def handle_plusplus_others(pp_instances, channel):
         name_values = c.fetchone()
 
         if not name_values:  # name isn't in table yet
-            #init_points = 1 if symbol == '++' else -1
+            init_points = 1 if symbol == '++' else -1
             if symbol == '++':
                 init_point = 1
             elif symbol == '--':
@@ -419,12 +419,7 @@ if __name__ == '__main__':
         BOT_MENTION_REGEX = BOT_MENTION_REGEX.format(bot_id)
         init_user_dict()
         while True:
-            try:
-                parse_messages(slack_client.rtm_read())
-                time.sleep(RTM_READ_DELAY)
-            except:
-                print('PlusPlusBot disconnected. Retrying...')
-                slack_client.rt_connect(with_team_state=False, auto_reconnect=True)
-                continue
+            parse_messages(slack_client.rtm_read())
+            time.sleep(RTM_READ_DELAY)
     else:
         print('connection failed. exception trace printed above')
