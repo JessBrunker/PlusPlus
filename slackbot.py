@@ -108,7 +108,7 @@ def handle_plusplus_mentions(user, mentions, channel):
             continue
 
         if not recip_values:  # user isn't in table yet
-            init_points = 1 if symbol == '+' else -1
+            init_points = 1 if symbol == '++' else -1
             recip_values = (recip_id, init_points, 0)
             c.execute('INSERT INTO UserScores VALUES (?, ?, ?)', recip_values)
         else:
