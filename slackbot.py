@@ -8,6 +8,7 @@ import sqlite3
 from slackclient import SlackClient
 from slack_code import wsd_code
 from slack_code import test_code
+from slack_code import random_channel
 
 
 # set to false if not using test slack
@@ -41,7 +42,7 @@ def parse_messages(slack_events):
     resolution.
     '''
     for event in slack_events:
-        if event['type'] == 'message' and not 'subtype' in event:
+        if event['type'] == 'message' and event['channel'] == random_channel and not 'subtype' in event:
             # check for '@bot {command}
             command_matches = re.search(BOT_MENTION_REGEX, event['text'])
             if command_matches and command_matches.group(1):
@@ -53,6 +54,12 @@ def parse_messages(slack_events):
 
             # check for @user++
             pp_mentions = re.findall(USER_PP_REGEX, event['text'])
+
+            if pp_mentions and len(pp_mentions) != 0:
+                print('Poster: {}'.format(event['user']))
+                print('\t{}'.format(pp_mentions))
+                print('\t{}'.format(event['text']))
+
             # don't want users to ++/-- themselves
             # we must shame them
             if self_gratification(event['user'], pp_mentions):
@@ -65,9 +72,16 @@ def parse_messages(slack_events):
 
             # check for @nonuser++
             pp_others = re.findall(OTHER_PP_REGEX, event['text'])
+
             # want to exclude any entries that are actually usernames
             pp_others = set(filter(
                 lambda x: x not in pp_mentions, pp_others))
+
+            if pp_others and len(pp_others) != 0:
+                print('Poster: {}'.format(event['user']))
+                print('\t{}'.format(pp_mentions))
+                print('\t{}'.format(event['text']))
+
             handle_plusplus_others(pp_others, event['channel'])
 
             # return pp_mentions, pp_others, event['channel']
